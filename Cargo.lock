@@ -4468,6 +4468,7 @@ dependencies = [
  "directory",
  "dirs",
  "discv5",
+ "env_logger 0.9.3",
  "error-chain",
  "ethereum_ssz",
  "ethereum_ssz_derive",

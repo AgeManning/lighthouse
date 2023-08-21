@@ -952,6 +952,8 @@ fn tcp_test_goodbye_rpc() {
 #[allow(clippy::single_match)]
 fn quic_test_goodbye_rpc() {
     // set up the logging. The level and enabled logging or not
+    use env_logger::{Builder, Env};
+    Builder::from_env(Env::default()).init();
     let log_level = Level::Debug;
     let enable_logging = true;
 

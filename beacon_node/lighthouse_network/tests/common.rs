@@ -142,6 +142,8 @@ pub async fn build_node_pair(
 ) -> (Libp2pInstance, Libp2pInstance) {
     let sender_log = log.new(o!("who" => "sender"));
     let receiver_log = log.new(o!("who" => "receiver"));
+    // The number of addresses we are listening on.
+    const LISTENING_ADDRS: usize = 4;
 
     let mut sender = build_libp2p_instance(rt.clone(), vec![], sender_log, fork_name, spec).await;
     let mut receiver = build_libp2p_instance(rt, vec![], receiver_log, fork_name, spec).await;
@@ -163,16 +165,25 @@ pub async fn build_node_pair(
 
     // let the two nodes set up listeners
     let sender_fut = async {
+        let mut listening_addrs_count = 0;
         loop {
             if let NetworkEvent::NewListenAddr(_) = sender.next_event().await {
-                return;
+                // Wait to listen on both QUIC and TCP sockets
+                listening_addrs_count +=1;
+                if listening_addrs_count >=LISTENING_ADDRS {
+                    return;
+                }
             }
         }
     };
     let receiver_fut = async {
+        let mut listening_addrs_count = 0;
         loop {
             if let NetworkEvent::NewListenAddr(_) = receiver.next_event().await {
-                return;
+                listening_addrs_count +=1;
+                if listening_addrs_count >=LISTENING_ADDRS {
+                    return;
+                }
             }
         }
     };
@@ -181,12 +192,17 @@ pub async fn build_node_pair(
 
     // wait for either both nodes to listen or a timeout
     tokio::select! {
-        _  = tokio::time::sleep(Duration::from_millis(500)) => {}
+        _  = tokio::time::sleep(Duration::from_millis(10000)) => {}
         _ = joined => {}
     }
 
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    use libp2p::multiaddr::Protocol as MProtocol;
+
+    let mut multiaddr = receiver_multiaddr.clone();
+    multiaddr.push(MProtocol::P2p(receiver.local_peer_id));
     // sender.dial_peer(peer_id);
-    match sender.testing_dial(receiver_multiaddr.clone()) {
+    match sender.testing_dial(multiaddr) {
         Ok(()) => {
             debug!(log, "Sender dialed receiver"; "address" => format!("{:?}", receiver_multiaddr))
         }
