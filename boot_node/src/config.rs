@@ -2,7 +2,7 @@ use beacon_node::{get_data_dir, set_network_config};
 use clap::ArgMatches;
 use eth2_network_config::Eth2NetworkConfig;
 use lighthouse_network::discovery::create_enr_builder_from_config;
-use lighthouse_network::discv5::{enr::CombinedKey, Discv5Config, Enr};
+use lighthouse_network::discv5::{enr::CombinedKey, Config as Discv5Config, Enr};
 use lighthouse_network::{
     discovery::{load_enr_from_disk, use_or_load_enr},
     load_private_key, CombinedKeyExt, NetworkConfig,

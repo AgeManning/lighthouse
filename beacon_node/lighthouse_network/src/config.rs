@@ -5,7 +5,7 @@ use crate::{Enr, PeerIdSerialized};
 use directory::{
     DEFAULT_BEACON_NODE_DIR, DEFAULT_HARDCODED_NETWORK, DEFAULT_NETWORK_DIR, DEFAULT_ROOT_DIR,
 };
-use discv5::{Discv5Config, Discv5ConfigBuilder};
+use discv5::{Config as Discv5Config, ConfigBuilder as Discv5ConfigBuilder};
 use libp2p::gossipsub;
 use libp2p::Multiaddr;
 use serde_derive::{Deserialize, Serialize};

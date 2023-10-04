@@ -4,72 +4,18 @@ pub use discv5::enr::{self, CombinedKey, EnrBuilder};
 
 use super::enr_ext::CombinedKeyExt;
 use super::ENR_FILENAME;
-use crate::types::{Enr, EnrAttestationBitfield, EnrSyncCommitteeBitfield};
+use crate::types::Enr;
 use crate::NetworkConfig;
 use discv5::enr::EnrKey;
 use libp2p::identity::Keypair;
 use slog::{debug, warn};
-use ssz::{Decode, Encode};
+use ssz::Encode;
 use ssz_types::BitVector;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use std::str::FromStr;
 use types::{EnrForkId, EthSpec};
-
-use super::enr_ext::{EnrExt, QUIC6_ENR_KEY, QUIC_ENR_KEY};
-
-/// The ENR field specifying the fork id.
-pub const ETH2_ENR_KEY: &str = "eth2";
-/// The ENR field specifying the attestation subnet bitfield.
-pub const ATTESTATION_BITFIELD_ENR_KEY: &str = "attnets";
-/// The ENR field specifying the sync committee subnet bitfield.
-pub const SYNC_COMMITTEE_BITFIELD_ENR_KEY: &str = "syncnets";
-
-/// Extension trait for ENR's within Eth2.
-pub trait Eth2Enr {
-    /// The attestation subnet bitfield associated with the ENR.
-    fn attestation_bitfield<TSpec: EthSpec>(
-        &self,
-    ) -> Result<EnrAttestationBitfield<TSpec>, &'static str>;
-
-    /// The sync committee subnet bitfield associated with the ENR.
-    fn sync_committee_bitfield<TSpec: EthSpec>(
-        &self,
-    ) -> Result<EnrSyncCommitteeBitfield<TSpec>, &'static str>;
-
-    fn eth2(&self) -> Result<EnrForkId, &'static str>;
-}
-
-impl Eth2Enr for Enr {
-    fn attestation_bitfield<TSpec: EthSpec>(
-        &self,
-    ) -> Result<EnrAttestationBitfield<TSpec>, &'static str> {
-        let bitfield_bytes = self
-            .get(ATTESTATION_BITFIELD_ENR_KEY)
-            .ok_or("ENR attestation bitfield non-existent")?;
-
-        BitVector::<TSpec::SubnetBitfieldLength>::from_ssz_bytes(bitfield_bytes)
-            .map_err(|_| "Could not decode the ENR attnets bitfield")
-    }
-
-    fn sync_committee_bitfield<TSpec: EthSpec>(
-        &self,
-    ) -> Result<EnrSyncCommitteeBitfield<TSpec>, &'static str> {
-        let bitfield_bytes = self
-            .get(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
-            .ok_or("ENR sync committee bitfield non-existent")?;
-
-        BitVector::<TSpec::SyncCommitteeSubnetCount>::from_ssz_bytes(bitfield_bytes)
-            .map_err(|_| "Could not decode the ENR syncnets bitfield")
-    }
-
-    fn eth2(&self) -> Result<EnrForkId, &'static str> {
-        let eth2_bytes = self.get(ETH2_ENR_KEY).ok_or("ENR has no eth2 field")?;
-
-        EnrForkId::from_ssz_bytes(eth2_bytes).map_err(|_| "Could not decode EnrForkId")
-    }
-}
 
 /// Either use the given ENR or load an ENR from file if it exists and matches the current NodeId
 /// and sequence number.
@@ -293,5 +239,95 @@ pub fn save_enr_to_disk(dir: &Path, enr: &Enr, log: &slog::Logger) {
                 "Could not write ENR to file"; "file" => format!("{:?}{:?}",dir, ENR_FILENAME),  "error" => %e
             );
         }
+    }
+}
+
+// helper function to convert a peer_id to a node_id. This is only possible for secp256k1/ed25519 libp2p
+// peer_ids
+pub fn peer_id_to_node_id(peer_id: &PeerId) -> Result<discv5::enr::NodeId, String> {
+    // A libp2p peer id byte representation should be 2 length bytes + 4 protobuf bytes + compressed pk bytes
+    // if generated from a PublicKey with Identity multihash.
+    let pk_bytes = &peer_id.to_bytes()[2..];
+
+    let public_key = PublicKey::try_decode_protobuf(pk_bytes).map_err(|e| {
+        format!(
+            " Cannot parse libp2p public key public key from peer id: {}",
+            e
+        )
+    })?;
+
+    match public_key.key_type() {
+        KeyType::Secp256k1 => {
+            let pk = public_key
+                .clone()
+                .try_into_secp256k1()
+                .expect("right key type");
+            let uncompressed_key_bytes = &pk.to_bytes_uncompressed()[1..];
+            let mut output = [0_u8; 32];
+            let mut hasher = Keccak::v256();
+            hasher.update(uncompressed_key_bytes);
+            hasher.finalize(&mut output);
+            Ok(discv5::enr::NodeId::parse(&output).expect("Must be correct length"))
+        }
+        KeyType::Ed25519 => {
+            let pk = public_key
+                .clone()
+                .try_into_ed25519()
+                .expect("right key type");
+            let uncompressed_key_bytes = pk.to_bytes();
+            let mut output = [0_u8; 32];
+            let mut hasher = Keccak::v256();
+            hasher.update(&uncompressed_key_bytes);
+            hasher.finalize(&mut output);
+            Ok(discv5::enr::NodeId::parse(&output).expect("Must be correct length"))
+        }
+
+        _ => Err(format!("Unsupported public key from peer {}", peer_id)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_secp256k1_peer_id_conversion() {
+        let sk_hex = "df94a73d528434ce2309abb19c16aedb535322797dbd59c157b1e04095900f48";
+        let sk_bytes = hex::decode(sk_hex).unwrap();
+        let secret_key = discv5::enr::k256::ecdsa::SigningKey::from_slice(&sk_bytes).unwrap();
+
+        let libp2p_sk = secp256k1::SecretKey::try_from_bytes(sk_bytes).unwrap();
+        let secp256k1_kp: secp256k1::Keypair = libp2p_sk.into();
+        let libp2p_kp: Keypair = secp256k1_kp.into();
+        let peer_id = libp2p_kp.public().to_peer_id();
+
+        let enr = discv5::enr::EnrBuilder::new("v4")
+            .build(&secret_key)
+            .unwrap();
+        let node_id = peer_id_to_node_id(&peer_id).unwrap();
+
+        assert_eq!(enr.node_id(), node_id);
+    }
+
+    #[test]
+    fn test_ed25519_peer_conversion() {
+        let sk_hex = "4dea8a5072119927e9d243a7d953f2f4bc95b70f110978e2f9bc7a9000e4b261";
+        let sk_bytes = hex::decode(sk_hex).unwrap();
+        let secret_key = discv5::enr::ed25519_dalek::SigningKey::from_bytes(
+            &sk_bytes.clone().try_into().unwrap(),
+        );
+
+        let libp2p_sk = ed25519::SecretKey::try_from_bytes(sk_bytes).unwrap();
+        let secp256k1_kp: ed25519::Keypair = libp2p_sk.into();
+        let libp2p_kp: Keypair = secp256k1_kp.into();
+        let peer_id = libp2p_kp.public().to_peer_id();
+
+        let enr = discv5::enr::EnrBuilder::new("v4")
+            .build(&secret_key)
+            .unwrap();
+        let node_id = peer_id_to_node_id(&peer_id).unwrap();
+
+        assert_eq!(enr.node_id(), node_id);
     }
 }

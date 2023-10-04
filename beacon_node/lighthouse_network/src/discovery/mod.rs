@@ -10,7 +10,7 @@ pub mod enr_ext;
 use crate::service::TARGET_SUBNET_PEERS;
 use crate::{error, Enr, NetworkConfig, NetworkGlobals, Subnet, SubnetDiscovery};
 use crate::{metrics, ClearDialError};
-use discv5::{enr::NodeId, Discv5, Discv5Event};
+use discv5::{enr::NodeId, Discv5, Event as Discv5Event, Error as Discv5Error};
 pub use enr::{
     build_enr, create_enr_builder_from_config, load_enr_from_disk, use_or_load_enr, CombinedKey,
     Eth2Enr,
@@ -145,7 +145,7 @@ enum EventStream {
     Awaiting(
         Pin<
             Box<
-                dyn Future<Output = Result<mpsc::Receiver<Discv5Event>, discv5::Discv5Error>>
+                dyn Future<Output = Result<mpsc::Receiver<Discv5Event>, Discv5Error>>
                     + Send,
             >,
         >,
