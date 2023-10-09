@@ -2,12 +2,12 @@
 
 pub use discv5::enr::{self, CombinedKey, EnrBuilder};
 
-use super::enr_ext::CombinedKeyExt;
 use super::ENR_FILENAME;
 use crate::types::Enr;
 use crate::NetworkConfig;
 use discv5::enr::EnrKey;
-use libp2p::identity::Keypair;
+use libp2p::identity::{ed25519, secp256k1, KeyType, Keypair, PublicKey};
+use libp2p::PeerId;
 use slog::{debug, warn};
 use ssz::Encode;
 use ssz_types::BitVector;
@@ -15,6 +15,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use std::str::FromStr;
+use tiny_keccak::{Hasher, Keccak};
 use types::{EnrForkId, EthSpec};
 
 /// Either use the given ENR or load an ENR from file if it exists and matches the current NodeId
@@ -123,7 +124,7 @@ pub fn create_enr_builder_from_config<T: EnrKey>(
                     .v4()
                     .and_then(|v4_addr| v4_addr.quic_port.try_into().ok())
             }) {
-                builder.add_value(QUIC_ENR_KEY, &quic4_port.get());
+                builder.quic(&quic4_port.get());
             }
 
             // If we are listening on ipv6, add the quic ipv6 port.
@@ -133,7 +134,7 @@ pub fn create_enr_builder_from_config<T: EnrKey>(
                     .v6()
                     .and_then(|v6_addr| v6_addr.quic_port.try_into().ok())
             }) {
-                builder.add_value(QUIC6_ENR_KEY, &quic6_port.get());
+                builder.quic6(&quic6_port.get());
             }
         }
 
@@ -170,17 +171,17 @@ pub fn build_enr<T: EthSpec>(
     let mut builder = create_enr_builder_from_config(config, true);
 
     // set the `eth2` field on our ENR
-    builder.add_value(ETH2_ENR_KEY, &enr_fork_id.as_ssz_bytes());
+    builder.eth2(&enr_fork_id.as_ssz_bytes());
 
     // set the "attnets" field on our ENR
     let bitfield = BitVector::<T::SubnetBitfieldLength>::new();
 
-    builder.add_value(ATTESTATION_BITFIELD_ENR_KEY, &bitfield.as_ssz_bytes());
+    builder.attestation_bitfield(&bitfield.as_ssz_bytes());
 
     // set the "syncnets" field on our ENR
     let bitfield = BitVector::<T::SyncCommitteeSubnetCount>::new();
 
-    builder.add_value(SYNC_COMMITTEE_BITFIELD_ENR_KEY, &bitfield.as_ssz_bytes());
+    builder.sync_committee(&bitfield.as_ssz_bytes());
 
     builder
         .build(enr_key)
@@ -201,14 +202,14 @@ fn compare_enr(local_enr: &Enr, disk_enr: &Enr) -> bool {
         && local_enr.quic4() == disk_enr.quic4()
         && local_enr.quic6() == disk_enr.quic6()
         // must match on the same fork
-        && local_enr.get(ETH2_ENR_KEY) == disk_enr.get(ETH2_ENR_KEY)
+        && local_enr.eth2() == disk_enr.eth2()
         // take preference over disk udp port if one is not specified
         && (local_enr.udp4().is_none() || local_enr.udp4() == disk_enr.udp4())
         && (local_enr.udp6().is_none() || local_enr.udp6() == disk_enr.udp6())
         // we need the ATTESTATION_BITFIELD_ENR_KEY and SYNC_COMMITTEE_BITFIELD_ENR_KEY key to match,
         // otherwise we use a new ENR. This will likely only be true for non-validating nodes
-        && local_enr.get(ATTESTATION_BITFIELD_ENR_KEY) == disk_enr.get(ATTESTATION_BITFIELD_ENR_KEY)
-        && local_enr.get(SYNC_COMMITTEE_BITFIELD_ENR_KEY) == disk_enr.get(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
+        && local_enr.attestation_bitfield() == disk_enr.attestation_bitfield()
+        && local_enr.sync_committee_bitfield() == disk_enr.sync_committee_bitfield()
 }
 
 /// Loads enr from the given directory

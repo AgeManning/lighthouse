@@ -4,7 +4,6 @@
 //! queries and manages access to the discovery routing table.
 
 pub(crate) mod enr;
-pub mod enr_ext;
 
 // Allow external use of the lighthouse ENR builder
 use crate::service::TARGET_SUBNET_PEERS;
@@ -12,13 +11,10 @@ use crate::{error, Enr, NetworkConfig, NetworkGlobals, Subnet, SubnetDiscovery};
 use crate::{metrics, ClearDialError};
 use discv5::{enr::NodeId, Discv5, Event as Discv5Event, Error as Discv5Error};
 pub use enr::{
-    build_enr, create_enr_builder_from_config, load_enr_from_disk, use_or_load_enr, CombinedKey,
-    Eth2Enr,
+    build_enr, create_enr_builder_from_config, load_enr_from_disk, use_or_load_enr, CombinedKey, peer_id_to_node_id
 };
-pub use enr_ext::{peer_id_to_node_id, CombinedKeyExt, EnrExt};
 pub use libp2p::identity::{Keypair, PublicKey};
 
-use enr::{ATTESTATION_BITFIELD_ENR_KEY, ETH2_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use libp2p::multiaddr::Protocol;
@@ -222,7 +218,7 @@ impl<TSpec: EthSpec> Discovery<TSpec> {
         );
 
         // convert the keypair into an ENR key
-        let enr_key: CombinedKey = CombinedKey::from_libp2p(local_key)?;
+        let enr_key: CombinedKey = CombinedKey::try_from(local_key)?;
 
         let mut discv5 = Discv5::new(local_enr, enr_key, config.discv5_config.clone())
             .map_err(|e| format!("Discv5 service failed. Error: {:?}", e))?;

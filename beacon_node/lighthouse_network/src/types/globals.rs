@@ -3,7 +3,6 @@ use crate::peer_manager::peerdb::PeerDB;
 use crate::rpc::{MetaData, MetaDataV2};
 use crate::types::{BackFillState, SyncState};
 use crate::Client;
-use crate::EnrExt;
 use crate::{Enr, GossipTopic, Multiaddr, PeerId};
 use parking_lot::RwLock;
 use std::collections::HashSet;
@@ -115,9 +114,8 @@ impl<TSpec: EthSpec> NetworkGlobals<TSpec> {
         trusted_peers: Vec<PeerId>,
         log: &slog::Logger,
     ) -> NetworkGlobals<TSpec> {
-        use crate::CombinedKeyExt;
         let keypair = libp2p::identity::secp256k1::Keypair::generate();
-        let enr_key: discv5::enr::CombinedKey = discv5::enr::CombinedKey::from_secp256k1(&keypair);
+        let enr_key: discv5::enr::CombinedKey = discv5::enr::CombinedKey::try_from(&keypair);
         let enr = discv5::enr::EnrBuilder::new("v4").build(&enr_key).unwrap();
         NetworkGlobals::new(
             enr,

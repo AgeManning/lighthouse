@@ -112,7 +112,6 @@ pub use crate::types::{
 pub use prometheus_client;
 
 pub use config::Config as NetworkConfig;
-pub use discovery::{CombinedKeyExt, EnrExt, Eth2Enr};
 pub use discv5;
 pub use libp2p;
 pub use libp2p::bandwidth::BandwidthSinks;

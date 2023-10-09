@@ -17,8 +17,6 @@ use crate::types::{
     fork_core_topics, subnet_from_topic_hash, GossipEncoding, GossipKind, GossipTopic,
     SnappyTransform, Subnet, SubnetDiscovery,
 };
-use crate::EnrExt;
-use crate::Eth2Enr;
 use crate::{error, metrics, Enr, NetworkGlobals, PubsubMessage, TopicHash};
 use api_types::{PeerRequestId, Request, RequestId, Response};
 use futures::stream::StreamExt;
