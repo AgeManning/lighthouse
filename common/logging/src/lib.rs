@@ -225,7 +225,7 @@ impl TimeLatch {
 
 pub fn create_tracing_layer(base_tracing_log_path: PathBuf, turn_on_terminal_logs: bool) {
     let filter_layer = match tracing_subscriber::EnvFilter::try_from_default_env()
-        .or_else(|_| tracing_subscriber::EnvFilter::try_new("warn"))
+        .or_else(|_| tracing_subscriber::EnvFilter::try_new("debug"))
     {
         Ok(filter) => filter,
         Err(e) => {
